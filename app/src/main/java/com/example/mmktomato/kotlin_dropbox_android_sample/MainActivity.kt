@@ -15,8 +15,7 @@ import kotlinx.coroutines.experimental.android.UI
 
 class MainActivity : AppCompatActivity() {
     private val LOG_TAG: String = "kotlin-dbx-android"
-    private val PREF_NAME: String = "kotlin-dbx-android"
-    private val PREF_KEY_ACCESS_TOKEN = "access-token"
+    private val prefs = SharedPrefsProxy(this)
 
     private fun getAccountAsync(dbxClient: DbxClientV2): Deferred<FullAccount> = async(CommonPool) {
         return@async dbxClient.users().currentAccount
@@ -41,16 +40,15 @@ class MainActivity : AppCompatActivity() {
         } while (res?.hasMore ?: false)
     }
 
-    private fun getAccessToken(): String? {
-        val prefs = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
-        var accessToken = prefs.getString(PREF_KEY_ACCESS_TOKEN, null)
-        if (accessToken == null) {
+    private fun getAccessToken(): String {
+        var accessToken = this.prefs.dbxAccessToken
+        if (accessToken.isNullOrEmpty()) {
             accessToken = Auth.getOAuth2Token()
-            if (accessToken == null) {
-                accessToken = null
+            if (accessToken.isNullOrEmpty()) {
+                accessToken = ""
             }
             else {
-                prefs.edit().putString(PREF_KEY_ACCESS_TOKEN, accessToken).apply()
+                this.prefs.dbxAccessToken = accessToken
             }
         }
         return accessToken
@@ -80,8 +78,7 @@ class MainActivity : AppCompatActivity() {
         // clearAccessTokenButton
         val clearAccessTokenButton = findViewById<Button>(R.id.clearAccessTokenButton)
         clearAccessTokenButton.setOnClickListener {
-            val prefs = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
-            prefs.edit().remove(PREF_KEY_ACCESS_TOKEN).apply()
+            this.prefs.removeDbxAccessToken()
         }
     }
 
@@ -91,7 +88,7 @@ class MainActivity : AppCompatActivity() {
         // check authentication.
         val accountTextView = findViewById<TextView>(R.id.accountTextView)
         val accessToken = getAccessToken()
-        if (accessToken == null) {
+        if (accessToken.isNullOrEmpty()) {
             accountTextView.text = "not authenticated."
         }
         else {
