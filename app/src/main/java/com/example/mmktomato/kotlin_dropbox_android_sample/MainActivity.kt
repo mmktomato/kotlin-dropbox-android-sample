@@ -1,44 +1,17 @@
 package com.example.mmktomato.kotlin_dropbox_android_sample
 
-import android.content.Context
+import android.content.Intent
 import android.support.v7.app.AppCompatActivity
 import android.os.Bundle
-import android.util.Log
 import android.widget.Button
 import android.widget.TextView
-import com.dropbox.core.v2.DbxClientV2
-import com.dropbox.core.v2.files.ListFolderResult
 import com.dropbox.core.android.Auth
-import com.dropbox.core.v2.users.FullAccount
 import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.android.UI
 
 class MainActivity : AppCompatActivity() {
-    private val LOG_TAG: String = "kotlin-dbx-android"
     private val prefs = SharedPrefsProxy(this)
-
-    private fun getAccountAsync(dbxClient: DbxClientV2): Deferred<FullAccount> = async(CommonPool) {
-        return@async dbxClient.users().currentAccount
-    }
-
-    private fun listFolderAsync(dbxClient: DbxClientV2, path: String) = launch(CommonPool) {
-        fun listFolder(prevRes: ListFolderResult?) = async(CommonPool) {
-            if (prevRes == null) {
-                return@async dbxClient.files().listFolder(path)
-            }
-            else {
-                return@async dbxClient.files().listFolderContinue(prevRes.cursor)
-            }
-        }
-
-        var res: ListFolderResult? = null
-        do {
-            res = listFolder(res).await()
-            for (metadata in res.entries) {
-                Log.i(LOG_TAG, metadata.name)
-            }
-        } while (res?.hasMore ?: false)
-    }
+    private lateinit var dbxProxy: DbxProxy
 
     private fun getAccessToken(): String {
         var accessToken = this.prefs.dbxAccessToken
@@ -58,10 +31,12 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        this.dbxProxy = DbxProxy(this.prefs)
+
         // authenticateButton
         val authenticateButton = findViewById<Button>(R.id.authenticateButton)
         authenticateButton.setOnClickListener {
-            if (!DbxClientHolder.initialized) {
+            if (!this.dbxProxy.initialized) {
                 Auth.startOAuth2Authentication(this, BuildConfig.DROPBOX_APP_KEY)
             }
         }
@@ -69,10 +44,11 @@ class MainActivity : AppCompatActivity() {
         // listFolderButton
         val listFolderButton = findViewById<Button>(R.id.listFolderButton)
         listFolderButton.setOnClickListener {
-            if (!DbxClientHolder.initialized) {
+            if (!this.dbxProxy.initialized) {
                 return@setOnClickListener
             }
-            listFolderAsync(DbxClientHolder.client, "")
+            val intent = Intent(this, BrowseActivity::class.java)
+            this.startActivity(intent)
         }
 
         // clearAccessTokenButton
@@ -92,11 +68,11 @@ class MainActivity : AppCompatActivity() {
             accountTextView.text = "not authenticated."
         }
         else {
-            DbxClientHolder.init(accessToken)
-            launch(UI) {
-                val account = getAccountAsync(DbxClientHolder.client).await()
+            this.dbxProxy.initialize(accessToken)
+            (fun(dbxProxy: DbxProxy) = launch(UI) {
+                val account = dbxProxy.getAccountAsync().await()
                 accountTextView.text = account.name.displayName
-            }
+            })(this.dbxProxy)
         }
     }
 }
