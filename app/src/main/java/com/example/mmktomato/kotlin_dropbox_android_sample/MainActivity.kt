@@ -10,9 +10,24 @@ import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.android.UI
 
 class MainActivity : AppCompatActivity() {
+    /**
+     * A proxy object of SharedPreferences.
+     */
     private val prefs = SharedPrefsProxy(this)
+
+    /**
+     * A proxy object of DropBox API.
+     */
     private lateinit var dbxProxy: DbxProxy
 
+    /**
+     * Returns the access token of DropBox API.
+     *
+     * If the access token is saved in SharedPreferences, returns it.
+     * If not, checks Auth.getOAuth2Token (result of OAuth2 authentication).
+     *
+     * @return access token of DropBox API.
+     */
     private fun getAccessToken(): String {
         var accessToken = this.prefs.dbxAccessToken
         if (accessToken.isNullOrEmpty()) {
