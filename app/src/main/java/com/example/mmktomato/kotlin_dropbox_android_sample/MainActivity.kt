@@ -63,6 +63,7 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
             val intent = Intent(this, BrowseActivity::class.java)
+            intent.putExtra("path", "")
             this.startActivity(intent)
         }
 

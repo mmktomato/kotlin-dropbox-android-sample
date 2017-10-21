@@ -1,12 +1,13 @@
 package com.example.mmktomato.kotlin_dropbox_android_sample
 
+import android.content.Intent
 import android.support.v7.app.AppCompatActivity
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
-import android.widget.AbsListView
-import android.widget.ArrayAdapter
-import android.widget.ListView
+import android.widget.*
+import com.dropbox.core.v2.files.FileMetadata
+import com.dropbox.core.v2.files.FolderMetadata
 import com.dropbox.core.v2.files.ListFolderResult
 import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.android.UI
@@ -57,6 +58,8 @@ class BrowseActivity : AppCompatActivity() {
         this.progressBar = inflater.inflate(R.layout.listview_progressbar, filesListView, false)
         this.listViewAdapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, mutableListOf())
 
+        val path = this.intent.getStringExtra("path")
+
         filesListView.adapter = this.listViewAdapter
         filesListView.addFooterView(this.progressBar)
         filesListView.setOnScrollListener(object : AbsListView.OnScrollListener {
@@ -70,7 +73,7 @@ class BrowseActivity : AppCompatActivity() {
                 if (totalItemCount == firstVisibleItem + visibleItemCount) {
                     launch(UI) {
                         try {
-                            val res = fetchItems(lastResult).await()
+                            val res = fetchItems(path, lastResult).await()
                             addItemsToListView(res, filesListView)
                         } finally {
                             preventOnScroll = false
@@ -85,6 +88,19 @@ class BrowseActivity : AppCompatActivity() {
             override fun onScrollStateChanged(p0: AbsListView?, p1: Int) {
             }
         })
+
+        filesListView.setOnItemClickListener { parent, view, position, id ->
+            val metadata = this.lastResult?.entries?.get(position)
+
+            when (metadata) {
+                is FileMetadata -> Toast.makeText(this, "FileMetadata is not implemented...", Toast.LENGTH_SHORT).show()
+                is FolderMetadata -> {
+                    val intent = Intent(this, BrowseActivity::class.java)
+                    intent.putExtra("path", metadata.pathLower)
+                    this.startActivity(intent)
+                }
+            }
+        }
     }
 
     override fun onResume() {
@@ -94,11 +110,12 @@ class BrowseActivity : AppCompatActivity() {
     /**
      * Fetches files and folders in the DropBox.
      *
+     * @param path folder path to show.
      * @param prevRes previous result of DbxProxy.listFolderAsync.
      * @return the result of DbxProxy.listFolderAsync.
      */
-    private fun fetchItems(prevRes: ListFolderResult?) = async(UI) {
-        val res = dbxProxy.listFolderAsync("", prevRes).await()
+    private fun fetchItems(path: String, prevRes: ListFolderResult?) = async(UI) {
+        val res = dbxProxy.listFolderAsync(path, prevRes).await()
         lastResult = res
 
         return@async res
