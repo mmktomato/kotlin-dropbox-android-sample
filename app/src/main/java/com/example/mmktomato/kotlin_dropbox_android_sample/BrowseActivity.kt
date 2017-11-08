@@ -1,10 +1,12 @@
 package com.example.mmktomato.kotlin_dropbox_android_sample
 
 import android.content.Intent
+import android.net.Uri
 import android.support.v7.app.AppCompatActivity
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
+import android.webkit.MimeTypeMap
 import android.widget.*
 import com.dropbox.core.v2.files.FileMetadata
 import com.dropbox.core.v2.files.FolderMetadata
@@ -93,7 +95,22 @@ class BrowseActivity : AppCompatActivity() {
             val metadata = this.lastResult?.entries?.get(position)
 
             when (metadata) {
-                is FileMetadata -> Toast.makeText(this, "FileMetadata is not implemented...", Toast.LENGTH_SHORT).show()
+                is FileMetadata -> {
+                    val ctx = this
+                    launch(UI) {
+                        val res = dbxProxy.getTemporaryLinkAsync(metadata.pathLower).await()
+                        val tempLink = res.link
+                        //var intent = Intent(Intent.ACTION_SEND)
+                        val intent = Intent(Intent.ACTION_VIEW)
+                        intent.setDataAndType(Uri.parse(tempLink), getMimeType(res.metadata.name))
+                        if (intent.resolveActivity(packageManager) != null) {
+                            startActivity(intent)
+                        }
+                        else {
+                            Toast.makeText(ctx, "No apps to open this file.", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
                 is FolderMetadata -> {
                     val intent = Intent(this, BrowseActivity::class.java)
                     intent.putExtra("path", metadata.pathLower)
@@ -101,6 +118,18 @@ class BrowseActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    /**
+     * Returns MIME type of specified filename.
+     *
+     * @param filename the filename to get mime type.
+     * @return the mime type.
+     */
+    private fun getMimeType(filename: String): String {
+        val i = filename.lastIndexOf(".")
+        val ext = filename.substring(i + 1)
+        return MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
     }
 
     override fun onResume() {

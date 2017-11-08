@@ -78,4 +78,14 @@ internal class DbxProxy(private val prefs: SharedPrefsProxy) {
             return@async ClientHolder.client.files().listFolderContinue(prevRes.cursor)
         }
     }
+
+    /**
+     * Returns a temporary link of file.
+     *
+     * @param path the file path.
+     * @return the instance of GetTemporaryLinkResult class.
+     */
+    fun getTemporaryLinkAsync(path: String) = async(CommonPool) {
+        return@async ClientHolder.client.files().getTemporaryLink(path)
+    }
 }
