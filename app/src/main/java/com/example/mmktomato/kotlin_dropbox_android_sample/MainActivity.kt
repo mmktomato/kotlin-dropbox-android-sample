@@ -85,10 +85,10 @@ class MainActivity : AppCompatActivity() {
         }
         else {
             this.dbxProxy.initialize(accessToken)
-            (fun(dbxProxy: DbxProxy) = launch(UI) {
+            launch(UI) {
                 val account = dbxProxy.getAccountAsync().await()
                 accountTextView.text = account.name.displayName
-            })(this.dbxProxy)
+            }
         }
     }
 }

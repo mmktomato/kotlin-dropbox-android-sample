@@ -11,13 +11,58 @@ import android.widget.*
 import com.dropbox.core.v2.files.FileMetadata
 import com.dropbox.core.v2.files.FolderMetadata
 import com.dropbox.core.v2.files.ListFolderResult
+import com.dropbox.core.v2.files.Metadata
 import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.android.UI
+import kotlin.coroutines.experimental.CoroutineContext
 
 /**
  * Activity for browsing files and folders in DropBox.
  */
 class BrowseActivity : AppCompatActivity() {
+
+    /**
+     * Listview scroll listener.
+     *
+     * @param onScrollBottom the callback function called when listview is scrolled to bottom. Returns whether there are more items.
+     */
+    private class OnScrollListener(private val onScrollBottom: (ctx: CoroutineContext) -> Deferred<Boolean>) : AbsListView.OnScrollListener {
+        /**
+         * A boolean flag of preventing OnScroll callback.
+         */
+        private var preventOnScroll = false
+
+        /**
+         * A boolean flag of whether all files and folders are loaded.
+         */
+        private var isAllItemsLoaded = false
+
+        override fun onScroll(view: AbsListView?, firstVisibleItem: Int, visibleItemCount: Int, totalItemCount: Int) {
+            if (preventOnScroll || isAllItemsLoaded) {
+                return
+            }
+            preventOnScroll = true
+
+            // Scrolling listView to bottom, fetches next.
+            if (totalItemCount == firstVisibleItem + visibleItemCount) {
+                val ctx = UI
+                launch(ctx) {
+                    try {
+                        isAllItemsLoaded = !onScrollBottom(ctx).await()
+                    } finally {
+                        preventOnScroll = false
+                    }
+                }
+            }
+            else {
+                preventOnScroll = false
+            }
+        }
+
+        override fun onScrollStateChanged(p0: AbsListView?, p1: Int) {
+        }
+    }
+
     /**
      * A proxy object of DropBox API.
      */
@@ -38,16 +83,6 @@ class BrowseActivity : AppCompatActivity() {
      */
     private var lastResult: ListFolderResult? = null
 
-    /**
-     * A boolean flag of preventing OnScroll callback.
-     */
-    private var preventOnScroll = false
-
-    /**
-     * A boolean flag of whether all files and folders are loaded.
-     */
-    private var isAllItemsLoaded = false
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_browse)
@@ -64,58 +99,22 @@ class BrowseActivity : AppCompatActivity() {
 
         filesListView.adapter = this.listViewAdapter
         filesListView.addFooterView(this.progressBar)
-        filesListView.setOnScrollListener(object : AbsListView.OnScrollListener {
-            override fun onScroll(view: AbsListView?, firstVisibleItem: Int, visibleItemCount: Int, totalItemCount: Int) {
-                if (preventOnScroll || isAllItemsLoaded) {
-                    return
-                }
-                preventOnScroll = true
 
-                // Scrolling listView to bottom, fetches next.
-                if (totalItemCount == firstVisibleItem + visibleItemCount) {
-                    launch(UI) {
-                        try {
-                            val res = fetchItems(path, lastResult).await()
-                            addItemsToListView(res, filesListView)
-                        } finally {
-                            preventOnScroll = false
-                        }
-                    }
-                }
-                else {
-                    preventOnScroll = false
-                }
-            }
-
-            override fun onScrollStateChanged(p0: AbsListView?, p1: Int) {
+        // on scroll
+        val onScrollListener = OnScrollListener({ ctx ->
+            async(ctx) {
+                val res = fetchItems(path, lastResult).await()
+                return@async addItemsToListView(res, filesListView)
             }
         })
+        filesListView.setOnScrollListener(onScrollListener)
 
+        // on item click
         filesListView.setOnItemClickListener { parent, view, position, id ->
             val metadata = this.lastResult?.entries?.get(position)
 
-            when (metadata) {
-                is FileMetadata -> {
-                    val ctx = this
-                    launch(UI) {
-                        val res = dbxProxy.getTemporaryLinkAsync(metadata.pathLower).await()
-                        val tempLink = res.link
-                        //var intent = Intent(Intent.ACTION_SEND)
-                        val intent = Intent(Intent.ACTION_VIEW)
-                        intent.setDataAndType(Uri.parse(tempLink), getMimeType(res.metadata.name))
-                        if (intent.resolveActivity(packageManager) != null) {
-                            startActivity(intent)
-                        }
-                        else {
-                            Toast.makeText(ctx, "No apps to open this file.", Toast.LENGTH_LONG).show()
-                        }
-                    }
-                }
-                is FolderMetadata -> {
-                    val intent = Intent(this, BrowseActivity::class.java)
-                    intent.putExtra("path", metadata.pathLower)
-                    this.startActivity(intent)
-                }
+            if (metadata != null) {
+                this.onListViewItemClick(metadata)
             }
         }
     }
@@ -155,13 +154,48 @@ class BrowseActivity : AppCompatActivity() {
      *
      * @param res the result of DbxProxy.listFolderAsync.
      * @param listView target ListView.
+     * @return whether there are more items.
      */
-    private fun addItemsToListView(res: ListFolderResult, listView: ListView) {
+    private fun addItemsToListView(res: ListFolderResult, listView: ListView): Boolean {
         this.listViewAdapter.addAll(res.entries.map { it.name })
 
         if (!res.hasMore) {
             listView.removeFooterView(this.progressBar)
-            isAllItemsLoaded = true
+            return false
+        }
+        return true
+    }
+
+    /**
+     * Called when an item of filesListView is tapped.
+     *
+     * @param metadata the tapped metadata.
+     */
+    private fun onListViewItemClick(metadata: Metadata) {
+        when (metadata) {
+            is FileMetadata -> {
+                val ctx = this
+                launch(UI) {
+                    val res = dbxProxy.getTemporaryLinkAsync(metadata.pathLower).await()
+                    val tempLink = res.link
+
+                    //var intent = Intent(Intent.ACTION_SEND)
+                    val intent = Intent(Intent.ACTION_VIEW)
+                    intent.setDataAndType(Uri.parse(tempLink), getMimeType(res.metadata.name))
+
+                    if (intent.resolveActivity(packageManager) != null) {
+                        startActivity(intent)
+                    }
+                    else {
+                        Toast.makeText(ctx, "No apps to open this file.", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+            is FolderMetadata -> {
+                val intent = Intent(this, BrowseActivity::class.java)
+                intent.putExtra("path", metadata.pathLower)
+                this.startActivity(intent)
+            }
         }
     }
 }
